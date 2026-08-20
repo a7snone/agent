@@ -13,15 +13,27 @@ cp .env.example .env   # then edit .env and add your ANTHROPIC_API_KEY
 export $(grep -v '^#' .env | xargs)   # or use a tool like python-dotenv/direnv
 ```
 
-## Run
+## Run (CLI)
 
 ```bash
 python agent.py
 ```
 
+## Run (web chat)
+
+```bash
+python server.py
+```
+
+Then open http://localhost:5000 in a browser for a chat UI. Each browser
+tab gets its own conversation (tracked via a session id in localStorage);
+conversations live in memory only and reset when the server restarts.
+
 ## Project layout
 
 - `agent.py` — the agentic loop (`Agent.send`) and a simple CLI chat loop.
+- `server.py` — Flask web server exposing the same agent over `/api/chat`.
+- `static/index.html` — the browser chat UI served by `server.py`.
 - `tools.py` — tool schemas (`TOOLS`) and their implementations
   (`TOOL_FUNCTIONS`). Included out of the box: `calculator`,
   `get_current_time`, `read_file`, `write_file`, `list_files` (file tools
