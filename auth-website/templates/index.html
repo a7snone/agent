@@ -1,0 +1,14 @@
+{% extends "layout.html" %}
+{% block title %}الرئيسية{% endblock %}
+{% block content %}
+  <section class="hero">
+    <h1>مرحبًا بك</h1>
+    <p>موقع مصادقة بسيط بدعم تسجيل حساب، تسجيل دخول، ولوحة تحكم محمية.</p>
+    {% if session.get('user_id') %}
+      <a class="btn" href="{{ url_for('dashboard') }}">اذهب إلى لوحة التحكم</a>
+    {% else %}
+      <a class="btn" href="{{ url_for('register') }}">إنشاء حساب جديد</a>
+      <a class="btn btn-secondary" href="{{ url_for('login') }}">تسجيل الدخول</a>
+    {% endif %}
+  </section>
+{% endblock %}
