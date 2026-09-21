@@ -17,6 +17,10 @@ echo "==> App dir: $APP_DIR"
 
 # 1. venv + deps
 if [ ! -d "$VENV_DIR" ]; then
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -qq
+    apt-get install -y -qq python3-venv python3-pip >/dev/null
+  fi
   python3 -m venv "$VENV_DIR"
 fi
 "$VENV_DIR/bin/pip" install -q --upgrade pip
