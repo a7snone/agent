@@ -26,7 +26,29 @@ DB_PATH = os.path.join(BASE_DIR, "auth.db")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 USERNAME_SANITIZE_RE = re.compile(r"[^a-zA-Z0-9_]")
 
+class ReverseProxyPrefixMiddleware:
+    """Honors an X-Script-Name header set by nginx so url_for() generates
+    correct links when the app is reverse-proxied under a path prefix
+    (e.g. https://fractionksa.com/auth/)."""
+
+    def __init__(self, wsgi_app):
+        self.wsgi_app = wsgi_app
+
+    def __call__(self, environ, start_response):
+        script_name = environ.get("HTTP_X_SCRIPT_NAME", "")
+        if script_name:
+            environ["SCRIPT_NAME"] = script_name
+            path_info = environ.get("PATH_INFO", "")
+            if path_info.startswith(script_name):
+                environ["PATH_INFO"] = path_info[len(script_name):]
+        scheme = environ.get("HTTP_X_FORWARDED_PROTO", "")
+        if scheme:
+            environ["wsgi.url_scheme"] = scheme
+        return self.wsgi_app(environ, start_response)
+
+
 app = Flask(__name__)
+app.wsgi_app = ReverseProxyPrefixMiddleware(app.wsgi_app)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
