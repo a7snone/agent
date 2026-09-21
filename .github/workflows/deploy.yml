@@ -6,7 +6,13 @@ on:
     paths:
       - "auth-website/**"
       - ".github/workflows/deploy.yml"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "deploy (default) or inspect (read-only, makes no changes)"
+        type: choice
+        options: [deploy, inspect]
+        default: deploy
 
 jobs:
   deploy:
@@ -32,7 +38,31 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -p "${DEPLOY_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
+      - name: Read-only recon (inspect mode only, makes no changes)
+        if: ${{ github.event.inputs.mode == 'inspect' }}
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          ssh -p "${DEPLOY_PORT:-22}" -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<'REMOTE'
+          set -x
+          echo "=== sites-enabled ==="
+          ls -la /etc/nginx/sites-enabled/ 2>/dev/null
+          echo "=== configs referencing fractionksa.com ==="
+          grep -RlsE "fractionksa\.com" /etc/nginx/sites-enabled/ /etc/nginx/sites-available/ 2>/dev/null
+          echo "=== matching file contents ==="
+          for f in $(grep -RlsE "fractionksa\.com" /etc/nginx/sites-enabled/ 2>/dev/null); do
+            echo "--- $f ---"
+            cat -A "$f" | sed -n '1,200p'
+          done
+          echo "=== nginx -t ==="
+          nginx -t 2>&1 || true
+          REMOTE
+
       - name: Ensure remote app directory exists
+        if: ${{ github.event.inputs.mode != 'inspect' }}
         env:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -44,6 +74,7 @@ jobs:
             "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$REMOTE_PATH'"
 
       - name: Sync application code
+        if: ${{ github.event.inputs.mode != 'inspect' }}
         env:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -63,7 +94,8 @@ jobs:
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-        if: ${{ env.GOOGLE_CLIENT_ID != '' }}
+          MODE: ${{ github.event.inputs.mode }}
+        if: ${{ env.GOOGLE_CLIENT_ID != '' && env.MODE != 'inspect' }}
         run: |
           ssh -p "${DEPLOY_PORT:-22}" -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
             "$DEPLOY_USER@$DEPLOY_HOST" "cat > /tmp/auth-website-oauth.env" <<EOF
@@ -72,6 +104,7 @@ jobs:
           EOF
 
       - name: Run remote deploy script
+        if: ${{ github.event.inputs.mode != 'inspect' }}
         env:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
