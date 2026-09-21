@@ -122,6 +122,43 @@ input:focus {
   margin-inline-start: 0.5rem;
 }
 
+.divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 1.5rem 0;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px solid #334155;
+}
+
+.divider:not(:empty)::before {
+  margin-inline-end: 0.75rem;
+}
+
+.divider:not(:empty)::after {
+  margin-inline-start: 0.75rem;
+}
+
+.btn-google {
+  display: block;
+  width: 100%;
+  margin-top: 0;
+  background: #ffffff;
+  color: #1f2937;
+  border: 1px solid #cbd5e1;
+}
+
+.btn-google:hover {
+  background: #f1f5f9;
+}
+
 .error {
   color: var(--error);
   background: rgba(248, 113, 113, 0.1);

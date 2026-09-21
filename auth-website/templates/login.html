@@ -13,6 +13,10 @@
 
       <button type="submit" class="btn">دخول</button>
     </form>
+    {% if google_oauth_enabled %}
+      <div class="divider">أو</div>
+      <a class="btn btn-google" href="{{ url_for('google_login') }}">تسجيل الدخول عبر جوجل</a>
+    {% endif %}
     <p>ليس لديك حساب؟ <a href="{{ url_for('register') }}">إنشاء حساب</a></p>
   </section>
 {% endblock %}

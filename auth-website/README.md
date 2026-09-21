@@ -4,6 +4,7 @@
 
 - إنشاء حساب (تحقق من صحة البيانات + كلمات مرور مُشفّرة بـ `werkzeug.security`)
 - تسجيل الدخول والخروج عبر جلسات Flask (session)
+- تسجيل الدخول / التسجيل عبر جوجل (OAuth 2.0 / OpenID Connect عبر Authlib) — اختياري
 - لوحة تحكم محمية لا يمكن الوصول إليها إلا بعد تسجيل الدخول
 - قاعدة بيانات SQLite محلية (`auth.db`، تُنشأ تلقائيًا)
 
@@ -18,6 +19,25 @@ python app.py
 ```
 
 ثم افتح `http://127.0.0.1:5000` في المتصفح.
+
+## تفعيل تسجيل الدخول عبر جوجل (اختياري)
+
+1. افتح [Google Cloud Console](https://console.cloud.google.com/apis/credentials) وأنشئ مشروعًا جديدًا (أو استخدم موجود).
+2. من "OAuth consent screen" فعّل نوع External واملأ الحقول الأساسية (اسم التطبيق، بريد الدعم).
+3. من "Credentials" أنشئ "OAuth client ID" من نوع **Web application**، وأضف:
+   - Authorized JavaScript origins: `http://127.0.0.1:5000`
+   - Authorized redirect URIs: `http://127.0.0.1:5000/auth/google/callback`
+4. انسخ الـ Client ID والـ Client Secret وصدّرهما قبل تشغيل التطبيق:
+
+```bash
+export GOOGLE_CLIENT_ID="xxxxxxxx.apps.googleusercontent.com"
+export GOOGLE_CLIENT_SECRET="xxxxxxxx"
+python app.py
+```
+
+إذا لم يتم تعيين المتغيرين، يعمل الموقع بشكل طبيعي بتسجيل الدخول بكلمة المرور فقط، ويختفي زر "الدخول عبر جوجل" تلقائيًا.
+
+عند أول دخول عبر جوجل، يُنشأ حساب جديد تلقائيًا (بدون كلمة مرور) باسم مستخدم مُشتق من البريد الإلكتروني. إذا كان البريد الإلكتروني نفسه مسجّلاً مسبقًا بكلمة مرور، يُربط حساب جوجل بنفس الحساب الموجود.
 
 ## ملاحظات أمنية
 

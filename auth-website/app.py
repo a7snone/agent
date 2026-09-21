@@ -1,8 +1,11 @@
-"""موقع مصادقة بسيط: تسجيل، دخول، خروج، لوحة تحكم محمية.
+"""موقع مصادقة بسيط: تسجيل، دخول (بكلمة مرور أو جوجل)، خروج، لوحة تحكم محمية.
 
 التشغيل:
     pip install -r requirements.txt
     export SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
+    # اختياري لتفعيل تسجيل الدخول عبر جوجل:
+    export GOOGLE_CLIENT_ID=...
+    export GOOGLE_CLIENT_SECRET=...
     python app.py
 """
 
@@ -13,18 +16,39 @@ import re
 import sqlite3
 from functools import wraps
 
-from flask import Flask, g, redirect, render_template, request, session, url_for
+from authlib.integrations.flask_client import OAuth
+from flask import Flask, flash, g, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "auth.db")
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+USERNAME_SANITIZE_RE = re.compile(r"[^a-zA-Z0-9_]")
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+GOOGLE_OAUTH_ENABLED = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
+
+oauth = OAuth(app)
+if GOOGLE_OAUTH_ENABLED:
+    oauth.register(
+        name="google",
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+        client_kwargs={"scope": "openid email profile"},
+    )
+
+
+@app.context_processor
+def inject_flags():
+    return {"google_oauth_enabled": GOOGLE_OAUTH_ENABLED}
 
 
 def get_db() -> sqlite3.Connection:
@@ -50,7 +74,8 @@ def init_db() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
                 email TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
+                password_hash TEXT,
+                google_id TEXT UNIQUE,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """
@@ -65,6 +90,20 @@ def login_required(view):
         return view(*args, **kwargs)
 
     return wrapped
+
+
+def _unique_username_from_email(db: sqlite3.Connection, email: str) -> str:
+    base = USERNAME_SANITIZE_RE.sub("", email.split("@")[0]).lower()
+    if len(base) < 3:
+        base = (base + "user")[:3]
+    base = base[:28]
+
+    candidate = base
+    suffix = 1
+    while db.execute("SELECT 1 FROM users WHERE username = ?", (candidate,)).fetchone() is not None:
+        candidate = f"{base}{suffix}"[:32]
+        suffix += 1
+    return candidate
 
 
 @app.route("/")
@@ -122,8 +161,11 @@ def login():
             (identifier, identifier.lower()),
         ).fetchone()
 
-        if user is None or not check_password_hash(user["password_hash"], password):
-            return render_template("login.html", error="بيانات الدخول غير صحيحة.", identifier=identifier)
+        if user is None or user["password_hash"] is None or not check_password_hash(user["password_hash"], password):
+            error = "بيانات الدخول غير صحيحة."
+            if user is not None and user["password_hash"] is None:
+                error = "هذا الحساب مسجّل عبر جوجل. استخدم زر «الدخول عبر جوجل»."
+            return render_template("login.html", error=error, identifier=identifier)
 
         session.clear()
         session["user_id"] = user["id"]
@@ -131,6 +173,53 @@ def login():
         return redirect(url_for("dashboard"))
 
     return render_template("login.html", error=None, identifier="")
+
+
+@app.route("/auth/google")
+def google_login():
+    if not GOOGLE_OAUTH_ENABLED:
+        flash("تسجيل الدخول عبر جوجل غير مُفعّل على هذا الخادم بعد.")
+        return redirect(url_for("login"))
+    redirect_uri = url_for("google_callback", _external=True)
+    return oauth.google.authorize_redirect(redirect_uri)
+
+
+@app.route("/auth/google/callback")
+def google_callback():
+    if not GOOGLE_OAUTH_ENABLED:
+        return redirect(url_for("login"))
+
+    token = oauth.google.authorize_access_token()
+    userinfo = token.get("userinfo")
+    if userinfo is None or not userinfo.get("email"):
+        flash("تعذّر جلب بيانات الحساب من جوجل.")
+        return redirect(url_for("login"))
+
+    google_id = userinfo["sub"]
+    email = userinfo["email"].strip().lower()
+
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE google_id = ?", (google_id,)).fetchone()
+
+    if user is None:
+        user = db.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if user is not None:
+            db.execute("UPDATE users SET google_id = ? WHERE id = ?", (google_id, user["id"]))
+            db.commit()
+            user = db.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone()
+        else:
+            username = _unique_username_from_email(db, email)
+            cursor = db.execute(
+                "INSERT INTO users (username, email, password_hash, google_id) VALUES (?, ?, NULL, ?)",
+                (username, email, google_id),
+            )
+            db.commit()
+            user = db.execute("SELECT * FROM users WHERE id = ?", (cursor.lastrowid,)).fetchone()
+
+    session.clear()
+    session["user_id"] = user["id"]
+    session["username"] = user["username"]
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/logout")

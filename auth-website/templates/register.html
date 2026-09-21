@@ -16,6 +16,10 @@
 
       <button type="submit" class="btn">إنشاء الحساب</button>
     </form>
+    {% if google_oauth_enabled %}
+      <div class="divider">أو</div>
+      <a class="btn btn-google" href="{{ url_for('google_login') }}">التسجيل عبر جوجل</a>
+    {% endif %}
     <p>لديك حساب بالفعل؟ <a href="{{ url_for('login') }}">تسجيل الدخول</a></p>
   </section>
 {% endblock %}
