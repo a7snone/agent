@@ -197,7 +197,7 @@ def login():
     return render_template("login.html", error=None, identifier="")
 
 
-@app.route("/auth/google")
+@app.route("/oauth/google")
 def google_login():
     if not GOOGLE_OAUTH_ENABLED:
         flash("تسجيل الدخول عبر جوجل غير مُفعّل على هذا الخادم بعد.")
@@ -206,7 +206,7 @@ def google_login():
     return oauth.google.authorize_redirect(redirect_uri)
 
 
-@app.route("/auth/google/callback")
+@app.route("/oauth/google/callback")
 def google_callback():
     if not GOOGLE_OAUTH_ENABLED:
         return redirect(url_for("login"))

@@ -25,15 +25,28 @@ python app.py
 1. افتح [Google Cloud Console](https://console.cloud.google.com/apis/credentials) وأنشئ مشروعًا جديدًا (أو استخدم موجود).
 2. من "OAuth consent screen" فعّل نوع External واملأ الحقول الأساسية (اسم التطبيق، بريد الدعم).
 3. من "Credentials" أنشئ "OAuth client ID" من نوع **Web application**، وأضف:
-   - Authorized JavaScript origins: `http://127.0.0.1:5000`
-   - Authorized redirect URIs: `http://127.0.0.1:5000/auth/google/callback`
-4. انسخ الـ Client ID والـ Client Secret وصدّرهما قبل تشغيل التطبيق:
 
-```bash
-export GOOGLE_CLIENT_ID="xxxxxxxx.apps.googleusercontent.com"
-export GOOGLE_CLIENT_SECRET="xxxxxxxx"
-python app.py
-```
+   **للتشغيل المحلي:**
+   - Authorized JavaScript origins: `http://127.0.0.1:5000`
+   - Authorized redirect URIs: `http://127.0.0.1:5000/oauth/google/callback`
+
+   **للموقع المنشور على fractionksa.com (الموقع مربوط على مسار `/auth/`):**
+   - Authorized JavaScript origins: `https://fractionksa.com`
+   - Authorized redirect URIs: `https://fractionksa.com/auth/oauth/google/callback`
+
+4. انسخ الـ Client ID والـ Client Secret.
+
+   **محليًا** صدّرهما قبل تشغيل التطبيق:
+   ```bash
+   export GOOGLE_CLIENT_ID="xxxxxxxx.apps.googleusercontent.com"
+   export GOOGLE_CLIENT_SECRET="xxxxxxxx"
+   python app.py
+   ```
+
+   **للنشر على السيرفر** أضفهما كـ GitHub repository secrets باسم
+   `GOOGLE_CLIENT_ID` و `GOOGLE_CLIENT_SECRET` (راجع `deploy/README.md`)،
+   ثم شغّل الـ workflow — تُكتب تلقائيًا في `/etc/auth-website.env` على
+   السيرفر وتُعاد الخدمة تشغيلها.
 
 إذا لم يتم تعيين المتغيرين، يعمل الموقع بشكل طبيعي بتسجيل الدخول بكلمة المرور فقط، ويختفي زر "الدخول عبر جوجل" تلقائيًا.
 
