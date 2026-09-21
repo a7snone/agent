@@ -115,6 +115,14 @@ jobs:
           ssh -p "${DEPLOY_PORT:-22}" -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
             "$DEPLOY_USER@$DEPLOY_HOST" "bash '$REMOTE_PATH/deploy/remote_deploy.sh'"
 
+      - name: Smoke test public URLs
+        if: ${{ github.event.inputs.mode != 'inspect' }}
+        run: |
+          echo "existing site (should be unaffected):"
+          curl -sS -o /dev/null -w "  https://fractionksa.com/ -> %{http_code}\n" https://fractionksa.com/
+          echo "new auth site:"
+          curl -sS -o /dev/null -w "  https://fractionksa.com/auth/login -> %{http_code}\n" https://fractionksa.com/auth/login
+
       - name: Clean up local key
         if: always()
         run: rm -f ~/.ssh/deploy_key
