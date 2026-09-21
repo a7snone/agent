@@ -34,12 +34,20 @@
       {% if session.get('user_id') %}
         {% if copy['owner_id'] == session['user_id'] %}
           <a class="btn" href="{{ url_for('content.edit_copy', copy_id=copy['id']) }}">تعديل نسختي</a>
+          <form method="post" action="{{ url_for('content.cancel_copy', copy_id=copy['id']) }}"
+                onsubmit="return confirm('متأكد إنك تبي تلغي نسختك من هذا المحتوى؟ الإجراء لا يمكن التراجع عنه.');">
+            <button type="submit" class="btn btn-secondary">إلغاء نسختي</button>
+          </form>
         {% else %}
           <form method="post" action="{{ url_for('content.authenticate', copy_id=copy['id']) }}">
             <button type="submit" class="btn">صادق على هذا المحتوى</button>
           </form>
           {% if my_copy %}
             <a class="btn btn-secondary" href="{{ url_for('content.view_copy', copy_id=my_copy['id']) }}">نسختي من هذا المحتوى</a>
+            <form method="post" action="{{ url_for('content.cancel_copy', copy_id=my_copy['id']) }}"
+                  onsubmit="return confirm('متأكد إنك تبي تلغي نسختك من هذا المحتوى؟ الإجراء لا يمكن التراجع عنه.');">
+              <button type="submit" class="btn btn-secondary">إلغاء نسختي</button>
+            </form>
           {% endif %}
         {% endif %}
       {% else %}

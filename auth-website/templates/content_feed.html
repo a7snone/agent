@@ -14,13 +14,15 @@
   {% endif %}
 
   {% for item in items %}
-    <div class="content-card">
-      <span class="badge">{{ 'خبر' if item['kind'] == 'news' else 'فيديو' }}</span>
-      <h2><a href="{{ url_for('content.view_copy', copy_id=item['id']) }}">{{ item['title'] }}</a></h2>
-      <p class="meta">
-        بواسطة {{ item['owner_username'] }} ·
-        {{ counts.get(item['content_item_id'], 1) }} مصادقة
-      </p>
-    </div>
+    <a class="content-row" href="{{ url_for('content.view_copy', copy_id=item['id']) }}">
+      <div class="content-row-main">
+        <span class="badge">{{ 'خبر' if item['kind'] == 'news' else 'فيديو' }}</span>
+        <span class="content-row-title">{{ item['title'] }}</span>
+        <span class="content-row-owner">بواسطة {{ item['owner_username'] }}</span>
+      </div>
+      <span class="badge" title="عدد الحسابات اللي عندها نفس هذا المحتوى بالضبط">
+        🔗 {{ counts.get(item['content_item_id'], 1) }} مصادقة
+      </span>
+    </a>
   {% endfor %}
 {% endblock %}

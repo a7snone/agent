@@ -26,6 +26,7 @@
       {% if block['event_type'] == 'create' %}إنشاء محتوى
       {% elif block['event_type'] == 'authenticate' %}مصادقة
       {% elif block['event_type'] == 'edit' %}تعديل
+      {% elif block['event_type'] == 'cancel' %}إلغاء نسخة
       {% else %}{{ block['event_type'] }}
       {% endif %}
       · {{ block['timestamp'] }}

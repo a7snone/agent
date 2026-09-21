@@ -353,6 +353,45 @@ def edit_copy(copy_id: int):
     return render_template("content_edit.html", error=None, copy=copy, title=copy["title"], body=copy["body"])
 
 
+@content_bp.route("/content/c/<int:copy_id>/cancel", methods=["POST"])
+@login_required
+def cancel_copy(copy_id: int):
+    db = get_db()
+    copy = db.execute("SELECT * FROM content_copies WHERE id = ?", (copy_id,)).fetchone()
+    if copy is None:
+        abort(404)
+    if copy["owner_id"] != session["user_id"]:
+        abort(403)
+
+    content_item_id = copy["content_item_id"]
+    prev_hash = copy["content_hash"]
+
+    # detach any copies that were authenticated FROM this one so the delete
+    # below doesn't violate the source_copy_id foreign key
+    db.execute("UPDATE content_copies SET source_copy_id = NULL WHERE source_copy_id = ?", (copy_id,))
+    db.execute("DELETE FROM content_copies WHERE id = ?", (copy_id,))
+
+    _append_block(
+        db,
+        event_type="cancel",
+        content_item_id=content_item_id,
+        copy_id=copy_id,
+        actor_id=session["user_id"],
+        content_hash="",
+        prev_copy_hash=prev_hash,
+    )
+    db.commit()
+    flash("تم إلغاء نسختك من هذا المحتوى.")
+
+    remaining = db.execute(
+        "SELECT id FROM content_copies WHERE content_item_id = ? ORDER BY id LIMIT 1",
+        (content_item_id,),
+    ).fetchone()
+    if remaining:
+        return redirect(url_for("content.view_copy", copy_id=remaining["id"]))
+    return redirect(url_for("content.feed"))
+
+
 @content_bp.route("/ledger")
 def ledger():
     db = get_db()
