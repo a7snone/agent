@@ -1,0 +1,80 @@
+name: Deploy auth-website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "auth-website/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${DEPLOY_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Ensure remote app directory exists
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          REMOTE_PATH="${DEPLOY_PATH:-/opt/apps/auth-website/app}"
+          ssh -p "${DEPLOY_PORT:-22}" -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$REMOTE_PATH'"
+
+      - name: Sync application code
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          REMOTE_PATH="${DEPLOY_PATH:-/opt/apps/auth-website/app}"
+          rsync -az --delete \
+            -e "ssh -p ${DEPLOY_PORT:-22} -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
+            --exclude ".venv" --exclude "__pycache__" --exclude "*.db" \
+            auth-website/ "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_PATH/"
+
+      - name: Stage optional Google OAuth secrets
+        if: ${{ secrets.GOOGLE_CLIENT_ID != '' }}
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: |
+          ssh -p "${DEPLOY_PORT:-22}" -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" "cat > /tmp/auth-website-oauth.env" <<EOF
+          GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
+          GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
+          EOF
+
+      - name: Run remote deploy script
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          REMOTE_PATH="${DEPLOY_PATH:-/opt/apps/auth-website/app}"
+          ssh -p "${DEPLOY_PORT:-22}" -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" "bash '$REMOTE_PATH/deploy/remote_deploy.sh'"
+
+      - name: Clean up local key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
