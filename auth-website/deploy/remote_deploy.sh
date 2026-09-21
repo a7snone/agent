@@ -15,8 +15,9 @@ DOMAIN_WWW="www.fractionksa.com"
 
 echo "==> App dir: $APP_DIR"
 
-# 1. venv + deps
-if [ ! -d "$VENV_DIR" ]; then
+# 1. venv + deps (rebuild if a prior run left a broken venv without pip)
+if [ ! -x "$VENV_DIR/bin/pip" ]; then
+  rm -rf "$VENV_DIR"
   if command -v apt-get >/dev/null 2>&1; then
     apt-get update -qq
     apt-get install -y -qq python3-venv python3-pip >/dev/null
