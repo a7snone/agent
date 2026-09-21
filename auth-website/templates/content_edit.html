@@ -1,0 +1,22 @@
+{% extends "layout.html" %}
+{% block title %}تعديل المحتوى{% endblock %}
+{% block content %}
+  <section class="form-card">
+    <h1>تعديل نسختي</h1>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <p class="meta">
+      تنبيه: أي تغيير يفصل نسختك عن مجموعة المصادقات الحالية (تفقد قيمتها).
+      إذا رجعت لنفس المحتوى بالضبط، ترجع تكسب القيمة الكاملة من جديد.
+    </p>
+    <form method="post" novalidate>
+      <label for="title">العنوان</label>
+      <input type="text" id="title" name="title" value="{{ title }}" required minlength="3" maxlength="200">
+
+      <label for="body">المحتوى</label>
+      <textarea id="body" name="body" rows="8" required>{{ body }}</textarea>
+
+      <button type="submit" class="btn">حفظ التغييرات</button>
+    </form>
+    <p><a href="{{ url_for('content.view_copy', copy_id=copy['id']) }}">إلغاء والعودة</a></p>
+  </section>
+{% endblock %}

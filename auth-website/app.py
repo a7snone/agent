@@ -14,14 +14,13 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
-from functools import wraps
 
 from authlib.integrations.flask_client import OAuth
-from flask import Flask, flash, g, redirect, render_template, request, session, url_for
+from flask import Flask, flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "auth.db")
+from content import content_bp, init_content_db
+from core import DB_PATH, close_db, get_db, login_required
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 USERNAME_SANITIZE_RE = re.compile(r"[^a-zA-Z0-9_]")
@@ -52,6 +51,8 @@ app.wsgi_app = ReverseProxyPrefixMiddleware(app.wsgi_app)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.teardown_appcontext(close_db)
+app.register_blueprint(content_bp)
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
@@ -73,21 +74,6 @@ def inject_flags():
     return {"google_oauth_enabled": GOOGLE_OAUTH_ENABLED}
 
 
-def get_db() -> sqlite3.Connection:
-    if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
-    return g.db
-
-
-@app.teardown_appcontext
-def close_db(_exc=None) -> None:
-    db = g.pop("db", None)
-    if db is not None:
-        db.close()
-
-
 def init_db() -> None:
     with sqlite3.connect(DB_PATH) as db:
         db.execute(
@@ -102,16 +88,6 @@ def init_db() -> None:
             )
             """
         )
-
-
-def login_required(view):
-    @wraps(view)
-    def wrapped(*args, **kwargs):
-        if not session.get("user_id"):
-            return redirect(url_for("login"))
-        return view(*args, **kwargs)
-
-    return wrapped
 
 
 def _unique_username_from_email(db: sqlite3.Connection, email: str) -> str:
@@ -260,6 +236,8 @@ def dashboard():
 
 if __name__ == "__main__":
     init_db()
+    init_content_db(DB_PATH)
     app.run(debug=True)
 else:
     init_db()
+    init_content_db(DB_PATH)

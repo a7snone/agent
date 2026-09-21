@@ -1,0 +1,52 @@
+{% extends "layout.html" %}
+{% block title %}{{ copy['title'] }}{% endblock %}
+{% block container_class %}wide{% endblock %}
+{% block content %}
+  <div class="content-card">
+    <span class="badge">{{ 'خبر' if copy['kind'] == 'news' else 'فيديو' }}</span>
+    <span class="badge" title="عدد الحسابات اللي عندها نفس هذا المحتوى بالضبط">🔗 {{ count }} مصادقة</span>
+
+    <h1>{{ copy['title'] }}</h1>
+    <p class="meta">
+      هذه نسخة <strong>{{ copy['owner_username'] }}</strong> ·
+      آخر تحديث: {{ copy['updated_at'] }}
+    </p>
+
+    <div class="authenticators">
+      {% for a in authenticators %}
+        <span class="chip">{{ a['username'] }}{% if a['owner_id'] == copy['owner_id'] and a['copy_id'] == copy['id'] %} (هذه النسخة){% endif %}</span>
+      {% endfor %}
+    </div>
+
+    <div class="content-body">
+      {% if copy['kind'] == 'video' %}
+        {% if 'youtube.com' in copy['body'] or 'youtu.be' in copy['body'] %}
+          <iframe src="{{ copy['body'] }}" allowfullscreen></iframe>
+        {% else %}
+          <video src="{{ copy['body'] }}" controls></video>
+        {% endif %}
+      {% else %}
+        {{ copy['body'] }}
+      {% endif %}
+    </div>
+
+    <div class="actions">
+      {% if session.get('user_id') %}
+        {% if copy['owner_id'] == session['user_id'] %}
+          <a class="btn" href="{{ url_for('content.edit_copy', copy_id=copy['id']) }}">تعديل نسختي</a>
+        {% else %}
+          <form method="post" action="{{ url_for('content.authenticate', copy_id=copy['id']) }}">
+            <button type="submit" class="btn">صادق على هذا المحتوى</button>
+          </form>
+          {% if my_copy %}
+            <a class="btn btn-secondary" href="{{ url_for('content.view_copy', copy_id=my_copy['id']) }}">نسختي من هذا المحتوى</a>
+          {% endif %}
+        {% endif %}
+      {% else %}
+        <a class="btn" href="{{ url_for('login') }}">سجّل الدخول للمصادقة على هذا المحتوى</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <p><a href="{{ url_for('content.ledger') }}">عرض سجل التجزئات (السجل غير القابل للتلاعب)</a></p>
+{% endblock %}
