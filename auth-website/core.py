@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import sqlite3
 from functools import wraps
 
-from flask import g, redirect, session, url_for
+from flask import current_app, g, redirect, session, url_for
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "auth.db")
@@ -27,6 +28,15 @@ def close_db(_exc=None) -> None:
     db = g.pop("db", None)
     if db is not None:
         db.close()
+
+
+def pseudonym_for(user_id: int) -> str:
+    """A stable, non-reversible display name for a user_id: the same user
+    always gets the same pseudonym, but it can't be turned back into the
+    user_id or username without the app's SECRET_KEY (kept server-side)."""
+    secret = current_app.config.get("SECRET_KEY", "")
+    digest = hashlib.sha256(f"pseudonym:{secret}:{user_id}".encode("utf-8")).hexdigest()
+    return f"مستخدم #{digest[:6].upper()}"
 
 
 def login_required(view):

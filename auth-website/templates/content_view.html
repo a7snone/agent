@@ -8,13 +8,13 @@
 
     <h1>{{ copy['title'] }}</h1>
     <p class="meta">
-      هذه نسخة <strong>{{ copy['owner_username'] }}</strong> ·
+      هذه نسخة <strong>{{ owner_pseudonym }}</strong> ·
       آخر تحديث: {{ copy['updated_at'] }}
     </p>
 
     <div class="authenticators">
       {% for a in authenticators %}
-        <span class="chip">{{ a['username'] }}{% if a['owner_id'] == copy['owner_id'] and a['copy_id'] == copy['id'] %} (هذه النسخة){% endif %}</span>
+        <span class="chip">{{ a.pseudonym }}{% if a.owner_id == copy['owner_id'] and a.copy_id == copy['id'] %} (هذه النسخة){% endif %}</span>
       {% endfor %}
     </div>
 
