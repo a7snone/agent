@@ -14,7 +14,10 @@ DB_PATH = os.path.join(BASE_DIR, "auth.db")
 
 def get_db() -> sqlite3.Connection:
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
+        # A longer busy timeout than the 5s default matters once more than one
+        # gunicorn worker writes concurrently -- SQLite allows only one writer
+        # at a time and blocks the rest until it's free.
+        g.db = sqlite3.connect(DB_PATH, timeout=30)
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
     return g.db

@@ -16,7 +16,9 @@ single trusted-server structure instead of a distributed chain.
 from __future__ import annotations
 
 import hashlib
+import random
 import sqlite3
+import time
 from datetime import datetime, timezone
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
@@ -96,30 +98,54 @@ def _block_payload(block_index, event_type, content_item_id, copy_id, actor_id,
     )
 
 
+_APPEND_BLOCK_MAX_ATTEMPTS = 8
+
+
 def _append_block(db, *, event_type, content_item_id, copy_id, actor_id, content_hash, prev_copy_hash):
-    last = db.execute("SELECT * FROM ledger_blocks ORDER BY block_index DESC LIMIT 1").fetchone()
-    block_index = (last["block_index"] + 1) if last else 0
-    prev_block_hash = last["block_hash"] if last else GENESIS_PREV_HASH
-    timestamp = datetime.now(timezone.utc).isoformat()
+    """Appends a new block, retrying if a concurrent request on another
+    connection raced this one. Two distinct failures can happen under real
+    concurrency (multiple gunicorn workers, each with its own connection):
+    - IntegrityError: another connection already took the next block_index
+      -- only that one INSERT is aborted in SQLite, not the caller's
+      in-progress transaction (the content_copies write already made in
+      this request), so recomputing and retrying is safe.
+    - OperationalError "database is locked": SQLite allows one writer at a
+      time; this fires if every retry of the connection's own busy_timeout
+      (set on connect) was exhausted while another writer held the lock.
+    Both are retried here with a small randomized backoff."""
+    for attempt in range(1, _APPEND_BLOCK_MAX_ATTEMPTS + 1):
+        try:
+            last = db.execute("SELECT * FROM ledger_blocks ORDER BY block_index DESC LIMIT 1").fetchone()
+            block_index = (last["block_index"] + 1) if last else 0
+            prev_block_hash = last["block_hash"] if last else GENESIS_PREV_HASH
+            timestamp = datetime.now(timezone.utc).isoformat()
 
-    payload = _block_payload(
-        block_index, event_type, content_item_id, copy_id, actor_id,
-        content_hash, prev_copy_hash, timestamp, prev_block_hash,
-    )
-    block_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+            payload = _block_payload(
+                block_index, event_type, content_item_id, copy_id, actor_id,
+                content_hash, prev_copy_hash, timestamp, prev_block_hash,
+            )
+            block_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    db.execute(
-        """
-        INSERT INTO ledger_blocks
-            (block_index, event_type, content_item_id, copy_id, actor_id,
-             content_hash, prev_copy_hash, timestamp, prev_block_hash, block_hash)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            block_index, event_type, content_item_id, copy_id, actor_id,
-            content_hash, prev_copy_hash, timestamp, prev_block_hash, block_hash,
-        ),
-    )
+            db.execute(
+                """
+                INSERT INTO ledger_blocks
+                    (block_index, event_type, content_item_id, copy_id, actor_id,
+                     content_hash, prev_copy_hash, timestamp, prev_block_hash, block_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    block_index, event_type, content_item_id, copy_id, actor_id,
+                    content_hash, prev_copy_hash, timestamp, prev_block_hash, block_hash,
+                ),
+            )
+            return
+        except sqlite3.IntegrityError:
+            if attempt == _APPEND_BLOCK_MAX_ATTEMPTS:
+                raise
+        except sqlite3.OperationalError as exc:
+            if "database is locked" not in str(exc) or attempt == _APPEND_BLOCK_MAX_ATTEMPTS:
+                raise
+        time.sleep(random.uniform(0.02, 0.08) * attempt)
 
 
 def _authenticators(db, content_item_id: int, content_hash: str):
