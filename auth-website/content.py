@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 
-from core import get_db, login_required
+from core import get_db, login_required, pseudonym_for
 
 content_bp = Blueprint("content", __name__)
 
@@ -149,12 +149,13 @@ def _append_block(db, *, event_type, content_item_id, copy_id, actor_id, content
 
 
 def _authenticators(db, content_item_id: int, content_hash: str):
+    """Who currently holds an identical copy. Deliberately does not join the
+    users table or select a username -- identity is never queried here, only
+    the owner_id needed to derive a pseudonym (see core.pseudonym_for)."""
     return db.execute(
         """
-        SELECT content_copies.id AS copy_id, users.username AS username,
-               content_copies.owner_id AS owner_id
+        SELECT content_copies.id AS copy_id, content_copies.owner_id AS owner_id
         FROM content_copies
-        JOIN users ON users.id = content_copies.owner_id
         WHERE content_copies.content_item_id = ? AND content_copies.content_hash = ?
         ORDER BY content_copies.created_at ASC
         """,
@@ -167,9 +168,8 @@ def feed():
     db = get_db()
     items = db.execute(
         """
-        SELECT cc.*, u.username AS owner_username, ci.kind AS kind
+        SELECT cc.*, ci.kind AS kind
         FROM content_copies cc
-        JOIN users u ON u.id = cc.owner_id
         JOIN content_items ci ON ci.id = cc.content_item_id
         WHERE cc.id IN (SELECT MIN(id) FROM content_copies GROUP BY content_item_id)
         ORDER BY cc.created_at DESC
@@ -179,7 +179,8 @@ def feed():
         item["content_item_id"]: len(_authenticators(db, item["content_item_id"], item["content_hash"]))
         for item in items
     }
-    return render_template("content_feed.html", items=items, counts=counts)
+    pseudonyms = {item["owner_id"]: pseudonym_for(item["owner_id"]) for item in items}
+    return render_template("content_feed.html", items=items, counts=counts, pseudonyms=pseudonyms)
 
 
 @content_bp.route("/content/new", methods=["GET", "POST"])
@@ -238,10 +239,9 @@ def view_copy(copy_id: int):
     db = get_db()
     copy = db.execute(
         """
-        SELECT content_copies.*, content_items.kind AS kind, users.username AS owner_username
+        SELECT content_copies.*, content_items.kind AS kind
         FROM content_copies
         JOIN content_items ON content_items.id = content_copies.content_item_id
-        JOIN users ON users.id = content_copies.owner_id
         WHERE content_copies.id = ?
         """,
         (copy_id,),
@@ -250,6 +250,10 @@ def view_copy(copy_id: int):
         abort(404)
 
     authenticators = _authenticators(db, copy["content_item_id"], copy["content_hash"])
+    authenticator_pseudonyms = [
+        {"copy_id": a["copy_id"], "owner_id": a["owner_id"], "pseudonym": pseudonym_for(a["owner_id"])}
+        for a in authenticators
+    ]
 
     my_copy = None
     if session.get("user_id"):
@@ -261,7 +265,8 @@ def view_copy(copy_id: int):
     return render_template(
         "content_view.html",
         copy=copy,
-        authenticators=authenticators,
+        owner_pseudonym=pseudonym_for(copy["owner_id"]),
+        authenticators=authenticator_pseudonyms,
         count=len(authenticators),
         my_copy=my_copy,
     )

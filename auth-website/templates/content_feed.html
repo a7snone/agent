@@ -18,7 +18,7 @@
       <div class="content-row-main">
         <span class="badge">{{ 'خبر' if item['kind'] == 'news' else 'فيديو' }}</span>
         <span class="content-row-title">{{ item['title'] }}</span>
-        <span class="content-row-owner">بواسطة {{ item['owner_username'] }}</span>
+        <span class="content-row-owner">بواسطة {{ pseudonyms.get(item['owner_id'], '') }}</span>
       </div>
       <span class="badge" title="عدد الحسابات اللي عندها نفس هذا المحتوى بالضبط">
         🔗 {{ counts.get(item['content_item_id'], 1) }} مصادقة
