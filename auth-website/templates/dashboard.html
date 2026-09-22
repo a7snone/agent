@@ -1,0 +1,12 @@
+{% extends "layout.html" %}
+{% block title %}لوحة التحكم{% endblock %}
+{% block content %}
+  <section class="form-card">
+    <h1>مرحبًا، {{ user['username'] }} 👋</h1>
+    <p>البريد الإلكتروني: {{ user['email'] }}</p>
+    <p>تاريخ إنشاء الحساب: {{ user['created_at'] }}</p>
+    <a class="btn" href="{{ url_for('content.new_content') }}">+ أضف محتوى</a>
+    <a class="btn btn-secondary" href="{{ url_for('content.feed') }}">تصفّح المحتوى</a>
+    <a class="btn" href="{{ url_for('logout') }}">تسجيل الخروج</a>
+  </section>
+{% endblock %}

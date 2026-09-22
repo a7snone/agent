@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}موقع المصادقة{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <nav class="navbar">
+    <a class="brand" href="{{ url_for('index') }}">موقع المصادقة</a>
+    <div class="nav-links">
+      <a href="{{ url_for('content.feed') }}">المحتوى</a>
+      <a href="{{ url_for('content.ledger') }}">السجل</a>
+      {% if session.get('user_id') %}
+        <a href="{{ url_for('dashboard') }}">لوحة التحكم</a>
+        <a href="{{ url_for('logout') }}">تسجيل الخروج</a>
+      {% else %}
+        <a href="{{ url_for('login') }}">تسجيل الدخول</a>
+        <a href="{{ url_for('register') }}">إنشاء حساب</a>
+      {% endif %}
+    </div>
+  </nav>
+  <main class="container {% block container_class %}{% endblock %}">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for message in messages %}
+          <p class="error">{{ message }}</p>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

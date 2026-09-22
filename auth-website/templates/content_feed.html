@@ -1,0 +1,28 @@
+{% extends "layout.html" %}
+{% block title %}المحتوى{% endblock %}
+{% block container_class %}wide{% endblock %}
+{% block content %}
+  <div class="actions" style="margin-bottom: 1.5rem;">
+    <h1 style="flex: 1; margin: 0;">المحتوى</h1>
+    {% if session.get('user_id') %}
+      <a class="btn" href="{{ url_for('content.new_content') }}">+ محتوى جديد</a>
+    {% endif %}
+  </div>
+
+  {% if not items %}
+    <p>لا يوجد محتوى بعد.</p>
+  {% endif %}
+
+  {% for item in items %}
+    <a class="content-row" href="{{ url_for('content.view_copy', copy_id=item['id']) }}">
+      <div class="content-row-main">
+        <span class="badge">{{ 'خبر' if item['kind'] == 'news' else 'فيديو' }}</span>
+        <span class="content-row-title">{{ item['title'] }}</span>
+        <span class="content-row-owner">بواسطة {{ item['owner_username'] }}</span>
+      </div>
+      <span class="badge" title="عدد الحسابات اللي عندها نفس هذا المحتوى بالضبط">
+        🔗 {{ counts.get(item['content_item_id'], 1) }} مصادقة
+      </span>
+    </a>
+  {% endfor %}
+{% endblock %}

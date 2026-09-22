@@ -1,0 +1,22 @@
+{% extends "layout.html" %}
+{% block title %}تسجيل الدخول{% endblock %}
+{% block content %}
+  <section class="form-card">
+    <h1>تسجيل الدخول</h1>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <form method="post" novalidate>
+      <label for="identifier">اسم المستخدم أو البريد الإلكتروني</label>
+      <input type="text" id="identifier" name="identifier" value="{{ identifier }}" required>
+
+      <label for="password">كلمة المرور</label>
+      <input type="password" id="password" name="password" required>
+
+      <button type="submit" class="btn">دخول</button>
+    </form>
+    {% if google_oauth_enabled %}
+      <div class="divider">أو</div>
+      <a class="btn btn-google" href="{{ url_for('google_login') }}">تسجيل الدخول عبر جوجل</a>
+    {% endif %}
+    <p>ليس لديك حساب؟ <a href="{{ url_for('register') }}">إنشاء حساب</a></p>
+  </section>
+{% endblock %}

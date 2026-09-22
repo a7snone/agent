@@ -1,0 +1,128 @@
+name: Deploy auth-website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "auth-website/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "deploy (default) or inspect (read-only, makes no changes)"
+        type: choice
+        options: [deploy, inspect]
+        default: deploy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          mkdir -p ~/.ssh
+          # DEPLOY_SSH_KEY is expected to be the private key content, base64-encoded
+          # on one line (base64 -w0), which survives copy/paste into the secrets UI
+          # without newline corruption. Falls back to raw multi-line content.
+          if echo "$DEPLOY_SSH_KEY" | base64 -d > ~/.ssh/deploy_key 2>/dev/null && [ -s ~/.ssh/deploy_key ]; then
+            :
+          else
+            printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          fi
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${DEPLOY_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Read-only recon (inspect mode only, makes no changes)
+        if: ${{ github.event.inputs.mode == 'inspect' }}
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          ssh -p "${DEPLOY_PORT:-22}" -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<'REMOTE'
+          set -x
+          echo "=== sites-enabled ==="
+          ls -la /etc/nginx/sites-enabled/ 2>/dev/null
+          echo "=== configs referencing fractionksa.com ==="
+          grep -RlsE "fractionksa\.com" /etc/nginx/sites-enabled/ /etc/nginx/sites-available/ 2>/dev/null
+          echo "=== matching file contents ==="
+          for f in $(grep -RlsE "fractionksa\.com" /etc/nginx/sites-enabled/ 2>/dev/null); do
+            echo "--- $f ---"
+            cat -A "$f" | sed -n '1,200p'
+          done
+          echo "=== nginx -t ==="
+          nginx -t 2>&1 || true
+          REMOTE
+
+      - name: Ensure remote app directory exists
+        if: ${{ github.event.inputs.mode != 'inspect' }}
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          REMOTE_PATH="${DEPLOY_PATH:-/opt/apps/auth-website/app}"
+          ssh -p "${DEPLOY_PORT:-22}" -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$REMOTE_PATH'"
+
+      - name: Sync application code
+        if: ${{ github.event.inputs.mode != 'inspect' }}
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          REMOTE_PATH="${DEPLOY_PATH:-/opt/apps/auth-website/app}"
+          rsync -az --delete \
+            -e "ssh -p ${DEPLOY_PORT:-22} -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
+            --exclude ".venv" --exclude "__pycache__" --exclude "*.db" \
+            auth-website/ "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_PATH/"
+
+      - name: Stage optional Google OAuth secrets
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          MODE: ${{ github.event.inputs.mode }}
+        if: ${{ env.GOOGLE_CLIENT_ID != '' && env.MODE != 'inspect' }}
+        run: |
+          ssh -p "${DEPLOY_PORT:-22}" -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" "cat > /tmp/auth-website-oauth.env" <<EOF
+          GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
+          GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
+          EOF
+
+      - name: Run remote deploy script
+        if: ${{ github.event.inputs.mode != 'inspect' }}
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          REMOTE_PATH="${DEPLOY_PATH:-/opt/apps/auth-website/app}"
+          ssh -p "${DEPLOY_PORT:-22}" -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" "bash '$REMOTE_PATH/deploy/remote_deploy.sh'"
+
+      - name: Smoke test public URLs
+        if: ${{ github.event.inputs.mode != 'inspect' }}
+        run: |
+          echo "existing site (should be unaffected):"
+          curl -sS -o /dev/null -w "  https://fractionksa.com/ -> %{http_code}\n" https://fractionksa.com/
+          echo "new auth site:"
+          curl -sS -o /dev/null -w "  https://fractionksa.com/auth/login -> %{http_code}\n" https://fractionksa.com/auth/login
+
+      - name: Clean up local key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
