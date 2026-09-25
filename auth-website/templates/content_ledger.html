@@ -1,0 +1,42 @@
+{% extends "layout.html" %}
+{% block title %}سجل: {{ item.title }}{% endblock %}
+{% block container_class %}wide{% endblock %}
+{% block content %}
+  <p><a href="{{ url_for('content.ledger') }}">&rarr; كل السجلات</a></p>
+
+  <h1>
+    <span class="badge">{{ 'خبر' if item.kind == 'news' else 'فيديو' }}</span>
+    سلسلة كتل «{{ item.title }}»
+  </h1>
+  <p class="meta">
+    سلسلة الكتل الخاصة بهذا المحتوى وحده — منفصلة تمامًا عن سلاسل باقي المحتوى.
+  </p>
+
+  {% if valid_chain %}
+    <div class="ledger-status ok">✓ السلسلة سليمة وكل الكتل متحقّق منها</div>
+  {% else %}
+    <div class="ledger-status bad">⚠ تم اكتشاف كسر في السلسلة</div>
+  {% endif %}
+
+  {% if not blocks %}
+    <p>لا يوجد أي حدث مسجّل بعد.</p>
+  {% endif %}
+
+  {% for entry in blocks | reverse %}
+    {% set block = entry.block %}
+    <div class="ledger-block {% if not entry.ok %}invalid{% endif %}">
+      <strong>#{{ block['block_index'] }}</strong> —
+      {% if block['event_type'] == 'create' %}إنشاء محتوى
+      {% elif block['event_type'] == 'authenticate' %}مصادقة
+      {% elif block['event_type'] == 'edit' %}تعديل
+      {% elif block['event_type'] == 'cancel' %}إلغاء نسخة
+      {% else %}{{ block['event_type'] }}
+      {% endif %}
+      · {{ block['timestamp'] }}
+      {% if not entry.ok %}<span style="color: var(--error);"> — غير متطابق!</span>{% endif %}
+      <div class="hash">block_hash: {{ block['block_hash'] }}</div>
+      <div class="hash">content_hash: {{ block['content_hash'] }}</div>
+      <div class="hash">prev_block: {{ block['prev_block_hash'] }}</div>
+    </div>
+  {% endfor %}
+{% endblock %}

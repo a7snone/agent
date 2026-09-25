@@ -56,5 +56,5 @@
     </div>
   </div>
 
-  <p><a href="{{ url_for('content.ledger') }}">عرض سجل التجزئات (السجل غير القابل للتلاعب)</a></p>
+  <p><a href="{{ url_for('content.item_ledger', content_item_id=copy['content_item_id']) }}">عرض سجل هذا المحتوى (سلسلة الكتل الخاصة به)</a></p>
 {% endblock %}

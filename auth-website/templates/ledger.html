@@ -4,36 +4,26 @@
 {% block content %}
   <h1>سجل التجزئات (Ledger)</h1>
   <p class="meta">
-    كل حدث (إنشاء محتوى، مصادقة، تعديل) يُسجَّل كـ"كتلة" مرتبطة بتجزئة الكتلة
-    اللي قبلها — نفس فكرة سلسلة الكتل، بحيث أي تلاعب بالسجل يكسر السلسلة
-    ويظهر فورًا.
+    لكل محتوى سلسلة كتل خاصة به — كل حدث عليه (إنشاء، مصادقة، تعديل) يُسجَّل
+    كـ"كتلة" مرتبطة بتجزئة الكتلة اللي قبلها ضمن نفس السلسلة، بحيث أي تلاعب
+    بسجل محتوى معيّن يكسر سلسلته هو ولا يخلط بمحتوى غيره.
   </p>
 
-  {% if valid_chain %}
-    <div class="ledger-status ok">✓ السلسلة سليمة وكل الكتل متحقّق منها</div>
-  {% else %}
-    <div class="ledger-status bad">⚠ تم اكتشاف كسر في السلسلة</div>
+  {% if not items %}
+    <p>لا يوجد أي محتوى بعد.</p>
   {% endif %}
 
-  {% if not blocks %}
-    <p>لا يوجد أي حدث مسجّل بعد.</p>
-  {% endif %}
-
-  {% for entry in blocks | reverse %}
-    {% set block = entry.block %}
-    <div class="ledger-block {% if not entry.ok %}invalid{% endif %}">
-      <strong>#{{ block['block_index'] }}</strong> —
-      {% if block['event_type'] == 'create' %}إنشاء محتوى
-      {% elif block['event_type'] == 'authenticate' %}مصادقة
-      {% elif block['event_type'] == 'edit' %}تعديل
-      {% elif block['event_type'] == 'cancel' %}إلغاء نسخة
-      {% else %}{{ block['event_type'] }}
+  {% for item in items %}
+    <a class="content-row" href="{{ url_for('content.item_ledger', content_item_id=item.content_item_id) }}">
+      <div class="content-row-main">
+        <span class="badge">{{ 'خبر' if item.kind == 'news' else 'فيديو' }}</span>
+        <span class="content-row-title">{{ item.title }}</span>
+      </div>
+      {% if item.valid_chain %}
+        <span class="badge" title="سلسلة الكتل الخاصة بهذا المحتوى سليمة">✓ {{ item.block_count }} كتلة</span>
+      {% else %}
+        <span class="badge" style="color: var(--error); border-color: var(--error);" title="تم اكتشاف كسر في سلسلة هذا المحتوى">⚠ {{ item.block_count }} كتلة</span>
       {% endif %}
-      · {{ block['timestamp'] }}
-      {% if not entry.ok %}<span style="color: var(--error);"> — غير متطابق!</span>{% endif %}
-      <div class="hash">block_hash: {{ block['block_hash'] }}</div>
-      <div class="hash">content_hash: {{ block['content_hash'] }}</div>
-      <div class="hash">prev_block: {{ block['prev_block_hash'] }}</div>
-    </div>
+    </a>
   {% endfor %}
 {% endblock %}
