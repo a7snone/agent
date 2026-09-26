@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}موقع المصادقة{% endblock %}</title>
+  <title>{% block title %}مصادقة{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <nav class="navbar">
-    <a class="brand" href="{{ url_for('index') }}">موقع المصادقة</a>
+    <a class="brand" href="{{ url_for('index') }}">مصادقة</a>
     <div class="nav-links">
       <a href="{{ url_for('content.feed') }}">المحتوى</a>
       <a href="{{ url_for('content.ledger') }}">السجل</a>

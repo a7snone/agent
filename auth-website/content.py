@@ -30,8 +30,80 @@ content_bp = Blueprint("content", __name__)
 GENESIS_PREV_HASH = "0" * 64
 
 
+_LEDGER_BLOCKS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS ledger_blocks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        block_index INTEGER NOT NULL,
+        event_type TEXT NOT NULL,
+        content_item_id INTEGER NOT NULL,
+        copy_id INTEGER NOT NULL,
+        actor_id INTEGER NOT NULL,
+        content_hash TEXT NOT NULL,
+        prev_copy_hash TEXT,
+        timestamp TEXT NOT NULL,
+        prev_block_hash TEXT NOT NULL,
+        block_hash TEXT NOT NULL,
+        UNIQUE(content_item_id, block_index)
+    )
+"""
+
+
+def _migrate_ledger_to_per_item_chains(db: sqlite3.Connection) -> None:
+    """Each content item used to share one global hash chain (block_index
+    unique across every item, prev_block_hash pointing at whatever block --
+    on any item -- happened to be last). That mixed unrelated items into a
+    single ledger. This re-chains existing history so every content item
+    has its own independent chain (its own genesis block), without losing
+    any recorded event."""
+    row = db.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='ledger_blocks'"
+    ).fetchone()
+    if row is None or row[0] is None or "UNIQUE(content_item_id, block_index)" in row[0]:
+        return
+
+    old_blocks = db.execute(
+        "SELECT * FROM ledger_blocks ORDER BY block_index ASC, id ASC"
+    ).fetchall()
+
+    db.execute("ALTER TABLE ledger_blocks RENAME TO ledger_blocks_old")
+    db.execute(_LEDGER_BLOCKS_TABLE_SQL)
+
+    next_index: dict[int, int] = {}
+    prev_hash_by_item: dict[int, str] = {}
+    for block in old_blocks:
+        content_item_id = block["content_item_id"]
+        block_index = next_index.get(content_item_id, 0)
+        prev_block_hash = prev_hash_by_item.get(content_item_id, GENESIS_PREV_HASH)
+
+        payload = _block_payload(
+            block_index, block["event_type"], content_item_id, block["copy_id"],
+            block["actor_id"], block["content_hash"], block["prev_copy_hash"],
+            block["timestamp"], prev_block_hash,
+        )
+        block_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+        db.execute(
+            """
+            INSERT INTO ledger_blocks
+                (block_index, event_type, content_item_id, copy_id, actor_id,
+                 content_hash, prev_copy_hash, timestamp, prev_block_hash, block_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                block_index, block["event_type"], content_item_id, block["copy_id"],
+                block["actor_id"], block["content_hash"], block["prev_copy_hash"],
+                block["timestamp"], prev_block_hash, block_hash,
+            ),
+        )
+        next_index[content_item_id] = block_index + 1
+        prev_hash_by_item[content_item_id] = block_hash
+
+    db.execute("DROP TABLE ledger_blocks_old")
+
+
 def init_content_db(db_path: str) -> None:
     with sqlite3.connect(db_path) as db:
+        db.row_factory = sqlite3.Row
         db.execute(
             """
             CREATE TABLE IF NOT EXISTS content_items (
@@ -57,23 +129,9 @@ def init_content_db(db_path: str) -> None:
             )
             """
         )
-        db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS ledger_blocks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                block_index INTEGER NOT NULL UNIQUE,
-                event_type TEXT NOT NULL,
-                content_item_id INTEGER NOT NULL,
-                copy_id INTEGER NOT NULL,
-                actor_id INTEGER NOT NULL,
-                content_hash TEXT NOT NULL,
-                prev_copy_hash TEXT,
-                timestamp TEXT NOT NULL,
-                prev_block_hash TEXT NOT NULL,
-                block_hash TEXT NOT NULL
-            )
-            """
-        )
+        db.execute(_LEDGER_BLOCKS_TABLE_SQL)
+        _migrate_ledger_to_per_item_chains(db)
+        db.commit()
 
 
 def _hash_content(title: str, body: str) -> str:
@@ -102,20 +160,27 @@ _APPEND_BLOCK_MAX_ATTEMPTS = 8
 
 
 def _append_block(db, *, event_type, content_item_id, copy_id, actor_id, content_hash, prev_copy_hash):
-    """Appends a new block, retrying if a concurrent request on another
-    connection raced this one. Two distinct failures can happen under real
-    concurrency (multiple gunicorn workers, each with its own connection):
+    """Appends a new block to this content item's own chain, retrying if a
+    concurrent request on another connection raced this one. Each content
+    item has an independent chain (its own genesis block) -- block_index
+    and prev_block_hash are only ever compared against that item's own
+    prior blocks, never another item's. Two distinct failures can happen
+    under real concurrency (multiple gunicorn workers, each with its own
+    connection):
     - IntegrityError: another connection already took the next block_index
-      -- only that one INSERT is aborted in SQLite, not the caller's
-      in-progress transaction (the content_copies write already made in
-      this request), so recomputing and retrying is safe.
+      for this same item -- only that one INSERT is aborted in SQLite, not
+      the caller's in-progress transaction (the content_copies write
+      already made in this request), so recomputing and retrying is safe.
     - OperationalError "database is locked": SQLite allows one writer at a
       time; this fires if every retry of the connection's own busy_timeout
       (set on connect) was exhausted while another writer held the lock.
     Both are retried here with a small randomized backoff."""
     for attempt in range(1, _APPEND_BLOCK_MAX_ATTEMPTS + 1):
         try:
-            last = db.execute("SELECT * FROM ledger_blocks ORDER BY block_index DESC LIMIT 1").fetchone()
+            last = db.execute(
+                "SELECT * FROM ledger_blocks WHERE content_item_id = ? ORDER BY block_index DESC LIMIT 1",
+                (content_item_id,),
+            ).fetchone()
             block_index = (last["block_index"] + 1) if last else 0
             prev_block_hash = last["block_hash"] if last else GENESIS_PREV_HASH
             timestamp = datetime.now(timezone.utc).isoformat()
@@ -423,11 +488,11 @@ def cancel_copy(copy_id: int):
     return redirect(url_for("content.feed"))
 
 
-@content_bp.route("/ledger")
-def ledger():
-    db = get_db()
-    blocks = db.execute("SELECT * FROM ledger_blocks ORDER BY block_index ASC").fetchall()
-
+def _verify_chain(blocks):
+    """Recomputes and checks every block's hash and chain linkage. Blocks
+    must already be a single item's chain, ordered by block_index ASC --
+    each item's chain starts from its own genesis (GENESIS_PREV_HASH), so
+    chains from different items are never checked against each other."""
     valid_chain = True
     prev_block_hash = GENESIS_PREV_HASH
     verified = []
@@ -443,5 +508,73 @@ def ledger():
             valid_chain = False
         prev_block_hash = block["block_hash"]
         verified.append({"block": block, "ok": ok})
+    return verified, valid_chain
 
-    return render_template("ledger.html", blocks=verified, valid_chain=valid_chain)
+
+@content_bp.route("/ledger")
+def ledger():
+    """Index of every content item's own blockchain -- each item has an
+    independent chain, so this lists them rather than mixing their blocks
+    into one feed."""
+    db = get_db()
+    items = db.execute(
+        """
+        SELECT cc.content_item_id AS content_item_id, cc.title AS title, ci.kind AS kind
+        FROM content_copies cc
+        JOIN content_items ci ON ci.id = cc.content_item_id
+        WHERE cc.id IN (SELECT MIN(id) FROM content_copies GROUP BY content_item_id)
+        ORDER BY cc.created_at DESC
+        """
+    ).fetchall()
+
+    summaries = []
+    for item in items:
+        blocks = db.execute(
+            "SELECT * FROM ledger_blocks WHERE content_item_id = ? ORDER BY block_index ASC",
+            (item["content_item_id"],),
+        ).fetchall()
+        _, valid_chain = _verify_chain(blocks)
+        summaries.append(
+            {
+                "content_item_id": item["content_item_id"],
+                "title": item["title"],
+                "kind": item["kind"],
+                "block_count": len(blocks),
+                "valid_chain": valid_chain,
+            }
+        )
+
+    return render_template("ledger.html", items=summaries)
+
+
+@content_bp.route("/content/item/<int:content_item_id>/ledger")
+def item_ledger(content_item_id: int):
+    """The blockchain belonging to a single content item, isolated from
+    every other item's chain."""
+    db = get_db()
+    item = db.execute(
+        """
+        SELECT cc.content_item_id AS content_item_id, cc.title AS title, ci.kind AS kind
+        FROM content_copies cc
+        JOIN content_items ci ON ci.id = cc.content_item_id
+        WHERE cc.content_item_id = ?
+        ORDER BY cc.created_at ASC
+        LIMIT 1
+        """,
+        (content_item_id,),
+    ).fetchone()
+    if item is None:
+        abort(404)
+
+    blocks = db.execute(
+        "SELECT * FROM ledger_blocks WHERE content_item_id = ? ORDER BY block_index ASC",
+        (content_item_id,),
+    ).fetchall()
+    verified, valid_chain = _verify_chain(blocks)
+
+    return render_template(
+        "content_ledger.html",
+        item=item,
+        blocks=verified,
+        valid_chain=valid_chain,
+    )
